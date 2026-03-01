@@ -3,6 +3,7 @@ package com.example.tcpclient.ui.activities;
 import android.annotation.SuppressLint;
 import android.os.Bundle;
 import android.util.Log;
+import android.view.Surface;
 import android.widget.TextView;
 import androidx.appcompat.app.AppCompatActivity;
 
@@ -17,6 +18,7 @@ import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.nio.ByteBuffer;
+import java.util.concurrent.Executor;
 
 import javax.crypto.SecretKey;
 
@@ -27,7 +29,6 @@ public class CallActivity extends AppCompatActivity {
     private VoiceCallManager voiceManager;
     private VideoCallManager videoManager;
 
-    // ARHITECTURA NOUĂ: Două socket-uri separate!
     private DatagramSocket audioSocket;
     private DatagramSocket videoSocket;
 
@@ -65,11 +66,8 @@ public class CallActivity extends AppCompatActivity {
         new Thread(() -> {
             try {
                 if (initUdpSockets()) {
-                    // Pornim paznicii pe ambele porturi
                     startAudioReceiver();
                     startVideoReceiver();
-
-                    // ÎNLOCUIT: Pornim bucla de Hole Punch periodic (Heartbeat)
                     startPeriodicHolePunch(myId, targetId);
 
                     boolean isAudioOnly = getIntent().getBooleanExtra("IS_AUDIO", true);
@@ -78,24 +76,16 @@ public class CallActivity extends AppCompatActivity {
                         if (!isAudioOnly) initVideoCall(myId);
                     });
                 }
-            } catch (Exception e) {
-                Log.e("UDP", "Failed to start network stack", e);
-            }
+            } catch (Exception e) { Log.e("UDP", "Failed", e); }
         }).start();
     }
 
-    // CREEAZĂ CELE DOUĂ SOCKET-URI LORE
     private boolean initUdpSockets() {
         try {
             audioSocket = new DatagramSocket();
             videoSocket = new DatagramSocket();
-            Log.d("UDP", "AudioSocket local port: " + audioSocket.getLocalPort());
-            Log.d("UDP", "VideoSocket local port: " + videoSocket.getLocalPort());
             return true;
-        } catch (Exception e) {
-            Log.e("UDP", "Socket creation failed", e);
-            return false;
-        }
+        } catch (Exception e) { return false; }
     }
 
     private void startPeriodicHolePunch(int myId, int targetId) {
@@ -110,15 +100,12 @@ public class CallActivity extends AppCompatActivity {
                 DatagramPacket audioPunch = new DatagramPacket(data, data.length, serverAddr, UDP_SERVER_AUDIO_PORT);
                 DatagramPacket videoPunch = new DatagramPacket(data, data.length, serverAddr, UDP_SERVER_VIDEO_PORT);
 
-                // Trimitem un impuls la fiecare secundă ca să ținem porturile deschise!
                 while (isCallActive) {
                     if (audioSocket != null && !audioSocket.isClosed()) audioSocket.send(audioPunch);
                     if (videoSocket != null && !videoSocket.isClosed()) videoSocket.send(videoPunch);
-                    Thread.sleep(1000); // Pauză de 1 secundă între bătăi
+                    Thread.sleep(1000);
                 }
-            } catch (Exception e) {
-                Log.e("UDP", "Periodic Hole Punch error", e);
-            }
+            } catch (Exception e) {}
         }).start();
     }
 
@@ -134,15 +121,9 @@ public class CallActivity extends AppCompatActivity {
         TcpConnection.setPacketListener(null);
     }
 
-    @SuppressLint("SetTextI18n")
     private void handlePacketOnUI(NetworkPacket packet) {
         runOnUiThread(() -> {
-            if (packet.getType() == PacketType.CALL_END) {
-                android.widget.Toast.makeText(this, "Call ended by partner.", android.widget.Toast.LENGTH_SHORT).show();
-                closeCallScreen();
-            }
-            else if (packet.getType() == PacketType.CALL_DENY) {
-                android.widget.Toast.makeText(this, "Call declined (Busy).", android.widget.Toast.LENGTH_SHORT).show();
+            if (packet.getType() == PacketType.CALL_END || packet.getType() == PacketType.CALL_DENY) {
                 closeCallScreen();
             }
         });
@@ -151,29 +132,21 @@ public class CallActivity extends AppCompatActivity {
     private void closeCallScreen() {
         isCallActive = false;
         if (cameraProvider != null) {
-            try {
-                cameraProvider.unbindAll();
-                Log.d("UDP", "CameraX unbinded - suprafata e libera.");
-            } catch (Exception e) { Log.e("UDP", "Error stopping camera", e); }
+            try { cameraProvider.unbindAll(); } catch (Exception e) {}
         }
-
         if (voiceManager != null) voiceManager.endCall();
         if (videoManager != null) videoManager.endVideo();
         finish();
     }
 
-    @SuppressLint("SetTextI18n")
     private void initVoiceCall(int myUserId) {
         ClientKeyManager keyManager = new ClientKeyManager(this);
         SecretKey sessionKey = keyManager.getKey(currentChatId);
 
         if (sessionKey != null) {
             voiceManager = new VoiceCallManager(this, serverIp, myUserId);
-            // DĂM MAI DEPARTE DOAR AUDIO SOCKET!
             voiceManager.startCall(targetUserId, sessionKey, audioSocket);
-        } else {
-            hangUp();
-        }
+        } else { hangUp(); }
     }
 
     private void initVideoCall(int myUserId) {
@@ -191,20 +164,20 @@ public class CallActivity extends AppCompatActivity {
                 @Override
                 public void surfaceCreated(android.view.SurfaceHolder holder) {
                     try {
-                        Log.d("UDP", "Surface-ul e gata de luptă!");
+                        // Initializam VideoCallManager cu suprafata remote
                         videoManager = new VideoCallManager(serverIp, myUserId, holder.getSurface());
                         videoManager.startVideo(targetUserId, sessionKey, videoSocket);
-                    }catch (Exception e){
-                        Log.e("UDP", "CRASH LA VIDEO MANAGER:", e);
+                    } catch (Exception e) {
+                        Log.e("VIDEO", "VideoCallManager init failed", e);
+                        return;
                     }
 
-                    // AM SCOS VERIFICAREA DE SURFACE ȘI AM PUS TIMPUL LA 500ms
+                    // Pornim camera dupa 300ms sa fie siguri ca encoderul e pornit
                     new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
                         if (videoManager != null) {
-                            Log.d("UDP", "Dăm drumul la cameră coaie!");
-                            startCameraX(null);
+                            startCameraX();
                         }
-                    }, 500);
+                    }, 300);
                 }
 
                 @Override
@@ -227,17 +200,12 @@ public class CallActivity extends AppCompatActivity {
     protected void onDestroy() {
         super.onDestroy();
         isCallActive = false;
-
         if (voiceManager != null) voiceManager.endCall();
         if (videoManager != null) videoManager.endVideo();
-
-        // Curățăm ambele socketuri
         if (audioSocket != null && !audioSocket.isClosed()) audioSocket.close();
         if (videoSocket != null && !videoSocket.isClosed()) videoSocket.close();
-        Log.d("UDP", "Ambele socket-uri închise cu succes.");
     }
 
-    // THREAD 1: ASCULTĂ DOAR AUDIO (Simplificat, nu mai are if/else)
     private void startAudioReceiver() {
         new Thread(() -> {
             byte[] buffer = new byte[8192];
@@ -245,19 +213,16 @@ public class CallActivity extends AppCompatActivity {
                 try {
                     DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
                     audioSocket.receive(packet);
-
-                    // Scoate direct datele (ignorăm myId și targetId de la server)
-                    if(packet.getLength() > 8) {
+                    if (packet.getLength() > 8) {
                         byte[] audioEncrypted = new byte[packet.getLength() - 8];
                         System.arraycopy(buffer, 8, audioEncrypted, 0, audioEncrypted.length);
                         if (voiceManager != null) voiceManager.receiveAudioData(audioEncrypted);
                     }
-                } catch (Exception e) { Log.e("UDP", "Audio Receiver error", e); }
+                } catch (Exception e) {}
             }
         }).start();
     }
 
-    // THREAD 2: ASCULTĂ DOAR VIDEO
     private void startVideoReceiver() {
         new Thread(() -> {
             byte[] buffer = new byte[65000];
@@ -265,100 +230,69 @@ public class CallActivity extends AppCompatActivity {
                 try {
                     DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
                     videoSocket.receive(packet);
-
-                    // Trimite tot către VideoManager (are decodorul lui de feliere)
                     if (packet.getLength() >= 17) {
                         byte[] videoData = new byte[packet.getLength()];
                         System.arraycopy(buffer, 0, videoData, 0, packet.getLength());
                         if (videoManager != null) videoManager.receiveVideoSlice(videoData);
                     }
-                } catch (Exception e) { Log.e("UDP", "Video Receiver error", e); }
+                } catch (Exception e) {}
             }
         }).start();
     }
 
-    private void startCameraX(android.view.Surface unused) {
+    private void startCameraX() {
         com.google.common.util.concurrent.ListenableFuture<androidx.camera.lifecycle.ProcessCameraProvider> cameraProviderFuture =
                 androidx.camera.lifecycle.ProcessCameraProvider.getInstance(this);
+
+        Executor mainExecutor = androidx.core.content.ContextCompat.getMainExecutor(this);
 
         cameraProviderFuture.addListener(() -> {
             try {
                 cameraProvider = cameraProviderFuture.get();
 
-                androidx.camera.core.Preview preview = new androidx.camera.core.Preview.Builder()
-                        .setTargetResolution(new android.util.Size(480, 640)).build();
-                preview.setSurfaceProvider(((androidx.camera.view.PreviewView) findViewById(R.id.previewView)).getSurfaceProvider());
+                int rotation = getWindowManager().getDefaultDisplay().getRotation();
 
-                androidx.camera.core.ImageAnalysis imageAnalysis = new androidx.camera.core.ImageAnalysis.Builder()
-                        // FOLOSEȘTE SETTARGETRESOLUTION MĂCAR LA 480x640 (portret) SAU 640x480 (landscape)
-                        .setTargetResolution(new android.util.Size(480, 640)) // Telefoanele stau in portret!
-                        .setBackpressureStrategy(androidx.camera.core.ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                        .setOutputImageFormat(androidx.camera.core.ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
+                // Preview pentru a vedea camera locala
+                androidx.camera.core.Preview preview = new androidx.camera.core.Preview.Builder()
+                        .setTargetResolution(new android.util.Size(480, 640))
+                        .setTargetRotation(rotation)
+                        .build();
+                preview.setSurfaceProvider(
+                        ((androidx.camera.view.PreviewView) findViewById(R.id.previewView)).getSurfaceProvider()
+                );
+
+                // Use case care trimite frame-uri direct pe suprafata encoderului
+                // Fara nicio conversie YUV - encoder-ul primeste date native de la camera
+                androidx.camera.core.Preview encoderPreview = new androidx.camera.core.Preview.Builder()
+                        .setTargetResolution(new android.util.Size(480, 640))
+                        .setTargetRotation(rotation)
                         .build();
 
-                imageAnalysis.setAnalyzer(androidx.core.content.ContextCompat.getMainExecutor(this), image -> {
-                    byte[] yuvBytes = imageToByteArray(image);
-                    if (videoManager != null) {
-                        videoManager.encodeFrame(yuvBytes);
-                    }
-                    image.close();
-                });
+                android.view.Surface encoderSurface = videoManager.getEncoderSurface();
+                if (encoderSurface != null) {
+                    encoderPreview.setSurfaceProvider(request -> {
+                        // Camera scrie direct pe suprafata encoderului
+                        request.provideSurface(
+                                encoderSurface,
+                                mainExecutor,
+                                result -> Log.d("CAMERA", "Encoder surface result: " + result.getResultCode())
+                        );
+                    });
+                }
 
                 cameraProvider.unbindAll();
-                cameraProvider.bindToLifecycle(this, androidx.camera.core.CameraSelector.DEFAULT_FRONT_CAMERA, preview, imageAnalysis);
-            } catch (Exception e) { Log.e("CAMERA", "Failed", e); }
-        }, androidx.core.content.ContextCompat.getMainExecutor(this));
-    }
+                cameraProvider.bindToLifecycle(
+                        this,
+                        androidx.camera.core.CameraSelector.DEFAULT_FRONT_CAMERA,
+                        preview,
+                        encoderPreview
+                );
 
-//    private byte[] imageToByteArray(androidx.camera.core.ImageProxy image) {
-//        androidx.camera.core.ImageProxy.PlaneProxy[] planes = image.getPlanes();
-//        ByteBuffer yBuffer = planes[0].getBuffer();
-//        ByteBuffer uBuffer = planes[1].getBuffer();
-//        ByteBuffer vBuffer = planes[2].getBuffer();
-//
-//        int ySize = yBuffer.remaining();
-//        int uSize = uBuffer.remaining();
-//        int vSize = vBuffer.remaining();
-//
-//        byte[] nv21 = new byte[ySize + uSize + vSize];
-//        yBuffer.get(nv21, 0, ySize);
-//        vBuffer.get(nv21, ySize, vSize);
-//        uBuffer.get(nv21, ySize + vSize, uSize);
-//        return nv21;
-//    }
-
-    private byte[] imageToByteArray(androidx.camera.core.ImageProxy image) {
-        int width = image.getWidth();
-        int height = image.getHeight();
-        int ySize = width * height;
-        int uvSize = width * height / 4;
-        byte[] nv12 = new byte[ySize + uvSize * 2];
-
-        ByteBuffer yBuffer = image.getPlanes()[0].getBuffer(); // Canal Alb-Negru
-        ByteBuffer uBuffer = image.getPlanes()[1].getBuffer(); // Canal Culoare 1
-        ByteBuffer vBuffer = image.getPlanes()[2].getBuffer(); // Canal Culoare 2
-
-        // Aici aflăm cât de mare e marginea aia invizibilă adăugată de telefon
-        int rowStrideY = image.getPlanes()[0].getRowStride();
-        int rowStrideUV = image.getPlanes()[1].getRowStride();
-        int pixelStrideUV = image.getPlanes()[1].getPixelStride();
-
-        // 1. Extragem forma clară (Y)
-        int pos = 0;
-        for (int row = 0; row < height; row++) {
-            yBuffer.position(row * rowStrideY);
-            yBuffer.get(nv12, pos, width);
-            pos += width;
-        }
-
-        // 2. Extragem culorile și le intercalăm perfect
-        for (int row = 0; row < height / 2; row++) {
-            for (int col = 0; col < width / 2; col++) {
-                int uvIndex = row * rowStrideUV + col * pixelStrideUV;
-                nv12[pos++] = uBuffer.get(uvIndex);
-                nv12[pos++] = vBuffer.get(uvIndex);
+                Log.d("CAMERA", "CameraX pornit cu Surface mode!");
+            } catch (Exception e) {
+                Log.e("CAMERA", "CameraX failed", e);
             }
-        }
-        return nv12;
+        }, mainExecutor);
     }
 }
+
