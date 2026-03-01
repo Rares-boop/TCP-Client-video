@@ -149,6 +149,48 @@ public class CallActivity extends AppCompatActivity {
         } else { hangUp(); }
     }
 
+//    private void initVideoCall(int myUserId) {
+//        ClientKeyManager keyManager = new ClientKeyManager(this);
+//        SecretKey sessionKey = keyManager.getKey(currentChatId);
+//
+//        if (sessionKey != null) {
+//            findViewById(R.id.remoteVideo).setVisibility(android.view.View.VISIBLE);
+//            findViewById(R.id.previewView).setVisibility(android.view.View.VISIBLE);
+//            findViewById(R.id.cardAvatar).setVisibility(android.view.View.GONE);
+//
+//            android.view.SurfaceView remoteVideoView = findViewById(R.id.remoteVideo);
+//
+//            remoteVideoView.getHolder().addCallback(new android.view.SurfaceHolder.Callback() {
+//                @Override
+//                public void surfaceCreated(android.view.SurfaceHolder holder) {
+//                    try {
+//                        // Initializam VideoCallManager cu suprafata remote
+//                        videoManager = new VideoCallManager(serverIp, myUserId, holder.getSurface());
+//                        videoManager.startVideo(targetUserId, sessionKey, videoSocket);
+//                    } catch (Exception e) {
+//                        Log.e("VIDEO", "VideoCallManager init failed", e);
+//                        return;
+//                    }
+//
+//                    // Pornim camera dupa 300ms sa fie siguri ca encoderul e pornit
+//                    new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+//                        if (videoManager != null) {
+//                            startCameraX();
+//                        }
+//                    }, 300);
+//                }
+//
+//                @Override
+//                public void surfaceChanged(android.view.SurfaceHolder holder, int format, int width, int height) {}
+//
+//                @Override
+//                public void surfaceDestroyed(android.view.SurfaceHolder holder) {
+//                    if (videoManager != null) videoManager.endVideo();
+//                }
+//            });
+//        }
+//    }
+
     private void initVideoCall(int myUserId) {
         ClientKeyManager keyManager = new ClientKeyManager(this);
         SecretKey sessionKey = keyManager.getKey(currentChatId);
@@ -158,35 +200,27 @@ public class CallActivity extends AppCompatActivity {
             findViewById(R.id.previewView).setVisibility(android.view.View.VISIBLE);
             findViewById(R.id.cardAvatar).setVisibility(android.view.View.GONE);
 
-            android.view.SurfaceView remoteVideoView = findViewById(R.id.remoteVideo);
-
-            remoteVideoView.getHolder().addCallback(new android.view.SurfaceHolder.Callback() {
+            android.view.TextureView remoteVideoView = findViewById(R.id.remoteVideo);
+            remoteVideoView.setSurfaceTextureListener(new android.view.TextureView.SurfaceTextureListener() {
                 @Override
-                public void surfaceCreated(android.view.SurfaceHolder holder) {
-                    try {
-                        // Initializam VideoCallManager cu suprafata remote
-                        videoManager = new VideoCallManager(serverIp, myUserId, holder.getSurface());
-                        videoManager.startVideo(targetUserId, sessionKey, videoSocket);
-                    } catch (Exception e) {
-                        Log.e("VIDEO", "VideoCallManager init failed", e);
-                        return;
-                    }
+                public void onSurfaceTextureAvailable(android.graphics.SurfaceTexture surface, int w, int h) {
+                    android.view.Surface s = new android.view.Surface(surface);
+                    videoManager = new VideoCallManager(serverIp, myUserId, s);
+                    videoManager.startVideo(targetUserId, sessionKey, videoSocket);
 
-                    // Pornim camera dupa 300ms sa fie siguri ca encoderul e pornit
+                    android.graphics.Matrix matrix = new android.graphics.Matrix();
+                    matrix.postRotate(270, w / 2f, h / 2f);
+                    float scaleY = (float) h / w;
+                    matrix.postScale(1f, scaleY, w / 2f, h / 2f);
+                    remoteVideoView.setTransform(matrix);
+
                     new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
-                        if (videoManager != null) {
-                            startCameraX();
-                        }
+                        if (videoManager != null) startCameraX();
                     }, 300);
                 }
-
-                @Override
-                public void surfaceChanged(android.view.SurfaceHolder holder, int format, int width, int height) {}
-
-                @Override
-                public void surfaceDestroyed(android.view.SurfaceHolder holder) {
-                    if (videoManager != null) videoManager.endVideo();
-                }
+                @Override public void onSurfaceTextureSizeChanged(android.graphics.SurfaceTexture s, int w, int h) {}
+                @Override public boolean onSurfaceTextureDestroyed(android.graphics.SurfaceTexture s) { return true; }
+                @Override public void onSurfaceTextureUpdated(android.graphics.SurfaceTexture s) {}
             });
         }
     }

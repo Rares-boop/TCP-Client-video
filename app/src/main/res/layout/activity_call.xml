@@ -7,7 +7,7 @@
     android:background="#101922"
     tools:context=".ui.activities.CallActivity">
 
-    <SurfaceView
+    <TextureView
         android:id="@+id/remoteVideo"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
