@@ -28,13 +28,10 @@ import chat.network.PacketType;
 public class CallActivity extends AppCompatActivity {
     private VoiceCallManager voiceManager;
     private VideoCallManager videoManager;
-
     private DatagramSocket audioSocket;
     private DatagramSocket videoSocket;
-
     private static final int UDP_SERVER_AUDIO_PORT = 15556;
     private static final int UDP_SERVER_VIDEO_PORT = 15557;
-
     private int targetUserId;
     private int currentChatId;
     private String serverIp;
@@ -149,48 +146,6 @@ public class CallActivity extends AppCompatActivity {
         } else { hangUp(); }
     }
 
-//    private void initVideoCall(int myUserId) {
-//        ClientKeyManager keyManager = new ClientKeyManager(this);
-//        SecretKey sessionKey = keyManager.getKey(currentChatId);
-//
-//        if (sessionKey != null) {
-//            findViewById(R.id.remoteVideo).setVisibility(android.view.View.VISIBLE);
-//            findViewById(R.id.previewView).setVisibility(android.view.View.VISIBLE);
-//            findViewById(R.id.cardAvatar).setVisibility(android.view.View.GONE);
-//
-//            android.view.SurfaceView remoteVideoView = findViewById(R.id.remoteVideo);
-//
-//            remoteVideoView.getHolder().addCallback(new android.view.SurfaceHolder.Callback() {
-//                @Override
-//                public void surfaceCreated(android.view.SurfaceHolder holder) {
-//                    try {
-//                        // Initializam VideoCallManager cu suprafata remote
-//                        videoManager = new VideoCallManager(serverIp, myUserId, holder.getSurface());
-//                        videoManager.startVideo(targetUserId, sessionKey, videoSocket);
-//                    } catch (Exception e) {
-//                        Log.e("VIDEO", "VideoCallManager init failed", e);
-//                        return;
-//                    }
-//
-//                    // Pornim camera dupa 300ms sa fie siguri ca encoderul e pornit
-//                    new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
-//                        if (videoManager != null) {
-//                            startCameraX();
-//                        }
-//                    }, 300);
-//                }
-//
-//                @Override
-//                public void surfaceChanged(android.view.SurfaceHolder holder, int format, int width, int height) {}
-//
-//                @Override
-//                public void surfaceDestroyed(android.view.SurfaceHolder holder) {
-//                    if (videoManager != null) videoManager.endVideo();
-//                }
-//            });
-//        }
-//    }
-
     private void initVideoCall(int myUserId) {
         ClientKeyManager keyManager = new ClientKeyManager(this);
         SecretKey sessionKey = keyManager.getKey(currentChatId);
@@ -208,10 +163,28 @@ public class CallActivity extends AppCompatActivity {
                     videoManager = new VideoCallManager(serverIp, myUserId, s);
                     videoManager.startVideo(targetUserId, sessionKey, videoSocket);
 
+//                    android.graphics.Matrix matrix = new android.graphics.Matrix();
+//                    matrix.postRotate(270, w / 2f, h / 2f);
+//                    float scaleY = (float) h / w;
+//                    matrix.postScale(1f, scaleY, w / 2f, h / 2f);
+//                    remoteVideoView.setTransform(matrix);
+
+//                    android.graphics.Matrix matrix = new android.graphics.Matrix();
+//                    matrix.postRotate(270, w / 2f, h / 2f);
+//                    float scale = (float) w / h;
+//                    matrix.postScale(scale, 1f, w / 2f, h / 2f);
+//                    remoteVideoView.setTransform(matrix);
+
                     android.graphics.Matrix matrix = new android.graphics.Matrix();
+// Anuleaza auto-scale implicit al TextureView
+                    matrix.postScale(1280f / w, 720f / h, w / 2f, h / 2f);
+// Rotim
                     matrix.postRotate(270, w / 2f, h / 2f);
-                    float scaleY = (float) h / w;
-                    matrix.postScale(1f, scaleY, w / 2f, h / 2f);
+// Scale sa umple ecranul
+                    float sx = (float) w / 720f;
+                    float sy = (float) h / 1280f;
+                    float scale = Math.max(sx, sy);
+                    matrix.postScale(scale, scale, w / 2f, h / 2f);
                     remoteVideoView.setTransform(matrix);
 
                     new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
@@ -288,7 +261,7 @@ public class CallActivity extends AppCompatActivity {
 
                 // Preview pentru a vedea camera locala
                 androidx.camera.core.Preview preview = new androidx.camera.core.Preview.Builder()
-                        .setTargetResolution(new android.util.Size(480, 640))
+                        .setTargetResolution(new android.util.Size(720, 1280))
                         .setTargetRotation(rotation)
                         .build();
                 preview.setSurfaceProvider(
@@ -298,7 +271,7 @@ public class CallActivity extends AppCompatActivity {
                 // Use case care trimite frame-uri direct pe suprafata encoderului
                 // Fara nicio conversie YUV - encoder-ul primeste date native de la camera
                 androidx.camera.core.Preview encoderPreview = new androidx.camera.core.Preview.Builder()
-                        .setTargetResolution(new android.util.Size(480, 640))
+                        .setTargetResolution(new android.util.Size(720, 1280))
                         .setTargetRotation(rotation)
                         .build();
 

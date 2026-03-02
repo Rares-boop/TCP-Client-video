@@ -20,11 +20,12 @@ import javax.crypto.SecretKey;
 public class VideoCallManager {
     private static final String TAG = "VideoCallManager";
     private static final String MIME_TYPE = "video/avc";
-    private static final int VIDEO_WIDTH = 640;
-    private static final int VIDEO_HEIGHT = 480;
-    private static final int MTU_LIMIT = 1100;
+    //width 1920
+    private static final int VIDEO_WIDTH = 1280;
+    //heigth 1080
+    private static final int VIDEO_HEIGHT = 720;
+    private static final int MTU_LIMIT = 1400;
     private static final int SERVER_VIDEO_PORT = 15557;
-
     private MediaCodec encoder;
     private MediaCodec decoder;
     private Surface encoderInputSurface; // Camera scrie direct aici
@@ -72,8 +73,8 @@ public class VideoCallManager {
             MediaFormat format = MediaFormat.createVideoFormat(MIME_TYPE, VIDEO_WIDTH, VIDEO_HEIGHT);
             // Surface mode - nu mai avem nevoie de color format manual
             format.setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface);
-            format.setInteger(MediaFormat.KEY_BIT_RATE, 500000);
-            format.setInteger(MediaFormat.KEY_FRAME_RATE, 15);
+            format.setInteger(MediaFormat.KEY_BIT_RATE, 2500000);
+            format.setInteger(MediaFormat.KEY_FRAME_RATE, 25);
             format.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 2);
 
             encoder = MediaCodec.createEncoderByType(MIME_TYPE);
