@@ -1,7 +1,6 @@
 package com.example.tcpclient.ui.activities;
 
 import android.annotation.SuppressLint;
-import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
 import android.widget.TextView;
@@ -272,16 +271,25 @@ public class CallActivity extends AppCompatActivity {
 
                 int rotation = getWindowManager().getDefaultDisplay().getRotation();
 
+                androidx.camera.core.resolutionselector.ResolutionSelector resolutionSelector =
+                        new androidx.camera.core.resolutionselector.ResolutionSelector.Builder()
+                        .setResolutionStrategy(new androidx.camera.core.resolutionselector.ResolutionStrategy(
+                                new android.util.Size(720, 1280),
+                                androidx.camera.core.resolutionselector.ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER
+                        ))
+                        .build();
+
                 androidx.camera.core.Preview preview = new androidx.camera.core.Preview.Builder()
-                        .setTargetResolution(new android.util.Size(720, 1280))
+                        .setResolutionSelector(resolutionSelector)
                         .setTargetRotation(rotation)
                         .build();
+
                 preview.setSurfaceProvider(
                         ((androidx.camera.view.PreviewView) findViewById(R.id.previewView)).getSurfaceProvider()
                 );
 
                 androidx.camera.core.Preview encoderPreview = new androidx.camera.core.Preview.Builder()
-                        .setTargetResolution(new android.util.Size(720, 1280))
+                        .setResolutionSelector(resolutionSelector)
                         .setTargetRotation(rotation)
                         .build();
 
