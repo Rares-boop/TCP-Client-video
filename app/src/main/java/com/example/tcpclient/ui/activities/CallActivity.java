@@ -1,10 +1,12 @@
 package com.example.tcpclient.ui.activities;
 
 import android.annotation.SuppressLint;
+import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
-import android.view.Surface;
 import android.widget.TextView;
+
+import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 
 import com.example.tcpclient.network.VideoCallManager;
@@ -70,7 +72,9 @@ public class CallActivity extends AppCompatActivity {
                     boolean isAudioOnly = getIntent().getBooleanExtra("IS_AUDIO", true);
                     runOnUiThread(() -> {
                         initVoiceCall(myId);
-                        if (!isAudioOnly) initVideoCall(myId);
+                        if (!isAudioOnly) {
+                            initVideoCall(myId);
+                        }
                     });
                 }
             } catch (Exception e) { Log.e("UDP", "Failed", e); }
@@ -98,11 +102,15 @@ public class CallActivity extends AppCompatActivity {
                 DatagramPacket videoPunch = new DatagramPacket(data, data.length, serverAddr, UDP_SERVER_VIDEO_PORT);
 
                 while (isCallActive) {
-                    if (audioSocket != null && !audioSocket.isClosed()) audioSocket.send(audioPunch);
-                    if (videoSocket != null && !videoSocket.isClosed()) videoSocket.send(videoPunch);
+                    if (audioSocket != null && !audioSocket.isClosed()) {
+                        audioSocket.send(audioPunch);
+                    }
+                    if (videoSocket != null && !videoSocket.isClosed()) {
+                        videoSocket.send(videoPunch);
+                    }
                     Thread.sleep(1000);
                 }
-            } catch (Exception e) {}
+            } catch (Exception ignored) {}
         }).start();
     }
 
@@ -129,10 +137,14 @@ public class CallActivity extends AppCompatActivity {
     private void closeCallScreen() {
         isCallActive = false;
         if (cameraProvider != null) {
-            try { cameraProvider.unbindAll(); } catch (Exception e) {}
+            try { cameraProvider.unbindAll(); } catch (Exception ignored) {}
         }
-        if (voiceManager != null) voiceManager.endCall();
-        if (videoManager != null) videoManager.endVideo();
+        if (voiceManager != null) {
+            voiceManager.endCall();
+        }
+        if (videoManager != null) {
+            videoManager.endVideo();
+        }
         finish();
     }
 
@@ -158,29 +170,16 @@ public class CallActivity extends AppCompatActivity {
             android.view.TextureView remoteVideoView = findViewById(R.id.remoteVideo);
             remoteVideoView.setSurfaceTextureListener(new android.view.TextureView.SurfaceTextureListener() {
                 @Override
-                public void onSurfaceTextureAvailable(android.graphics.SurfaceTexture surface, int w, int h) {
+                public void onSurfaceTextureAvailable(@NonNull android.graphics.SurfaceTexture surface, int w, int h) {
                     android.view.Surface s = new android.view.Surface(surface);
                     videoManager = new VideoCallManager(serverIp, myUserId, s);
                     videoManager.startVideo(targetUserId, sessionKey, videoSocket);
 
-//                    android.graphics.Matrix matrix = new android.graphics.Matrix();
-//                    matrix.postRotate(270, w / 2f, h / 2f);
-//                    float scaleY = (float) h / w;
-//                    matrix.postScale(1f, scaleY, w / 2f, h / 2f);
-//                    remoteVideoView.setTransform(matrix);
-
-//                    android.graphics.Matrix matrix = new android.graphics.Matrix();
-//                    matrix.postRotate(270, w / 2f, h / 2f);
-//                    float scale = (float) w / h;
-//                    matrix.postScale(scale, 1f, w / 2f, h / 2f);
-//                    remoteVideoView.setTransform(matrix);
-
                     android.graphics.Matrix matrix = new android.graphics.Matrix();
-// Anuleaza auto-scale implicit al TextureView
+
                     matrix.postScale(1280f / w, 720f / h, w / 2f, h / 2f);
-// Rotim
                     matrix.postRotate(270, w / 2f, h / 2f);
-// Scale sa umple ecranul
+
                     float sx = (float) w / 720f;
                     float sy = (float) h / 1280f;
                     float scale = Math.max(sx, sy);
@@ -188,12 +187,14 @@ public class CallActivity extends AppCompatActivity {
                     remoteVideoView.setTransform(matrix);
 
                     new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
-                        if (videoManager != null) startCameraX();
+                        if (videoManager != null) {
+                            startCameraX();
+                        }
                     }, 300);
                 }
-                @Override public void onSurfaceTextureSizeChanged(android.graphics.SurfaceTexture s, int w, int h) {}
-                @Override public boolean onSurfaceTextureDestroyed(android.graphics.SurfaceTexture s) { return true; }
-                @Override public void onSurfaceTextureUpdated(android.graphics.SurfaceTexture s) {}
+                @Override public void onSurfaceTextureSizeChanged(@NonNull android.graphics.SurfaceTexture s, int w, int h) {}
+                @Override public boolean onSurfaceTextureDestroyed(@NonNull android.graphics.SurfaceTexture s) { return true; }
+                @Override public void onSurfaceTextureUpdated(@NonNull android.graphics.SurfaceTexture s) {}
             });
         }
     }
@@ -207,10 +208,18 @@ public class CallActivity extends AppCompatActivity {
     protected void onDestroy() {
         super.onDestroy();
         isCallActive = false;
-        if (voiceManager != null) voiceManager.endCall();
-        if (videoManager != null) videoManager.endVideo();
-        if (audioSocket != null && !audioSocket.isClosed()) audioSocket.close();
-        if (videoSocket != null && !videoSocket.isClosed()) videoSocket.close();
+        if (voiceManager != null) {
+            voiceManager.endCall();
+        }
+        if (videoManager != null) {
+            videoManager.endVideo();
+        }
+        if (audioSocket != null && !audioSocket.isClosed()) {
+            audioSocket.close();
+        }
+        if (videoSocket != null && !videoSocket.isClosed()) {
+            videoSocket.close();
+        }
     }
 
     private void startAudioReceiver() {
@@ -223,9 +232,11 @@ public class CallActivity extends AppCompatActivity {
                     if (packet.getLength() > 8) {
                         byte[] audioEncrypted = new byte[packet.getLength() - 8];
                         System.arraycopy(buffer, 8, audioEncrypted, 0, audioEncrypted.length);
-                        if (voiceManager != null) voiceManager.receiveAudioData(audioEncrypted);
+                        if (voiceManager != null) {
+                            voiceManager.receiveAudioData(audioEncrypted);
+                        }
                     }
-                } catch (Exception e) {}
+                } catch (Exception ignored) {}
             }
         }).start();
     }
@@ -240,9 +251,11 @@ public class CallActivity extends AppCompatActivity {
                     if (packet.getLength() >= 17) {
                         byte[] videoData = new byte[packet.getLength()];
                         System.arraycopy(buffer, 0, videoData, 0, packet.getLength());
-                        if (videoManager != null) videoManager.receiveVideoSlice(videoData);
+                        if (videoManager != null) {
+                            videoManager.receiveVideoSlice(videoData);
+                        }
                     }
-                } catch (Exception e) {}
+                } catch (Exception ignored) {}
             }
         }).start();
     }
@@ -259,7 +272,6 @@ public class CallActivity extends AppCompatActivity {
 
                 int rotation = getWindowManager().getDefaultDisplay().getRotation();
 
-                // Preview pentru a vedea camera locala
                 androidx.camera.core.Preview preview = new androidx.camera.core.Preview.Builder()
                         .setTargetResolution(new android.util.Size(720, 1280))
                         .setTargetRotation(rotation)
@@ -268,8 +280,6 @@ public class CallActivity extends AppCompatActivity {
                         ((androidx.camera.view.PreviewView) findViewById(R.id.previewView)).getSurfaceProvider()
                 );
 
-                // Use case care trimite frame-uri direct pe suprafata encoderului
-                // Fara nicio conversie YUV - encoder-ul primeste date native de la camera
                 androidx.camera.core.Preview encoderPreview = new androidx.camera.core.Preview.Builder()
                         .setTargetResolution(new android.util.Size(720, 1280))
                         .setTargetRotation(rotation)
@@ -277,14 +287,13 @@ public class CallActivity extends AppCompatActivity {
 
                 android.view.Surface encoderSurface = videoManager.getEncoderSurface();
                 if (encoderSurface != null) {
-                    encoderPreview.setSurfaceProvider(request -> {
-                        // Camera scrie direct pe suprafata encoderului
+                    encoderPreview.setSurfaceProvider(request ->
                         request.provideSurface(
                                 encoderSurface,
                                 mainExecutor,
                                 result -> Log.d("CAMERA", "Encoder surface result: " + result.getResultCode())
-                        );
-                    });
+                        )
+                    );
                 }
 
                 cameraProvider.unbindAll();
@@ -295,7 +304,7 @@ public class CallActivity extends AppCompatActivity {
                         encoderPreview
                 );
 
-                Log.d("CAMERA", "CameraX pornit cu Surface mode!");
+                Log.d("CAMERA", "CameraX started with Surface mode!");
             } catch (Exception e) {
                 Log.e("CAMERA", "CameraX failed", e);
             }

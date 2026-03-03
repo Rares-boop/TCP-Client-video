@@ -3,45 +3,43 @@ package com.example.tcpclient.network;
 import android.media.MediaCodec;
 import android.media.MediaCodecInfo;
 import android.media.MediaFormat;
+import android.os.Build;
 import android.util.Log;
 import android.view.Surface;
+
+import androidx.annotation.NonNull;
+
+import com.example.tcpclient.utils.NalUtils;
 import com.example.tcpclient.utils.UdpCryptoUtils;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.nio.ByteBuffer;
-import java.util.Arrays;
-import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import javax.crypto.SecretKey;
 
 public class VideoCallManager {
     private static final String TAG = "VideoCallManager";
     private static final String MIME_TYPE = "video/avc";
-    //width 1920
     private static final int VIDEO_WIDTH = 1280;
-    //heigth 1080
     private static final int VIDEO_HEIGHT = 720;
     private static final int MTU_LIMIT = 1400;
     private static final int SERVER_VIDEO_PORT = 15557;
     private MediaCodec encoder;
     private MediaCodec decoder;
-    private Surface encoderInputSurface; // Camera scrie direct aici
+    private Surface encoderInputSurface;
     private DatagramSocket videoSocket;
     private SecretKey sessionKey;
-    private int myId;
+    private final int myId;
     private int targetId;
-    private String serverIp;
-    private boolean isVideoActive = false;
-    private Surface remoteSurface;
-
+    private final String serverIp;
+    private volatile boolean isVideoActive = false;
+    private final Surface remoteSurface;
     private final Map<Integer, byte[][]> frameCollector = new HashMap<>();
     private final Map<Integer, Integer> sliceCounter = new HashMap<>();
     private final java.util.concurrent.ConcurrentLinkedQueue<byte[]> decodedFramesQueue = new java.util.concurrent.ConcurrentLinkedQueue<>();
-
-    private boolean isDecoderConfigured = false;
+    private volatile boolean isDecoderConfigured = false;
 
     public VideoCallManager(String serverIp, int myId, Surface remoteSurface) {
         this.serverIp = serverIp;
@@ -60,10 +58,6 @@ public class VideoCallManager {
         setupEncoder();
     }
 
-    /**
-     * Returneaza suprafata pe care camera trebuie sa scrie.
-     * Apeleaza dupa startVideo().
-     */
     public Surface getEncoderSurface() {
         return encoderInputSurface;
     }
@@ -71,7 +65,6 @@ public class VideoCallManager {
     private void setupEncoder() {
         try {
             MediaFormat format = MediaFormat.createVideoFormat(MIME_TYPE, VIDEO_WIDTH, VIDEO_HEIGHT);
-            // Surface mode - nu mai avem nevoie de color format manual
             format.setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface);
             format.setInteger(MediaFormat.KEY_BIT_RATE, 2500000);
             format.setInteger(MediaFormat.KEY_FRAME_RATE, 25);
@@ -80,21 +73,14 @@ public class VideoCallManager {
             encoder = MediaCodec.createEncoderByType(MIME_TYPE);
             encoder.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE);
 
-            // Cream suprafata INAINTE de start()
             encoderInputSurface = encoder.createInputSurface();
 
             encoder.start();
             startEncoderLoop();
-            Log.d(TAG, "Encoder video pornit cu Surface mode!");
+            Log.d(TAG, "Encoder video started with Surface mode!");
         } catch (Exception e) {
             Log.e(TAG, "Encoder setup failed", e);
         }
-    }
-
-    // Aceasta metoda nu mai e necesara in Surface mode
-    // Camera scrie direct pe encoderInputSurface
-    public void encodeFrame(byte[] yuvData) {
-        // Nu mai e folosita
     }
 
     private void startEncoderLoop() {
@@ -104,7 +90,9 @@ public class VideoCallManager {
             try {
                 InetAddress addr = InetAddress.getByName(serverIp);
                 while (isVideoActive) {
-                    if (encoder == null) break;
+                    if (encoder == null) {
+                        break;
+                    }
                     try {
                         int index = encoder.dequeueOutputBuffer(info, 50000);
 
@@ -117,12 +105,16 @@ public class VideoCallManager {
                             ByteBuffer outBuf = encoder.getOutputBuffer(index);
 
                             if ((info.flags & MediaCodec.BUFFER_FLAG_CODEC_CONFIG) != 0) {
+                                if (outBuf == null) {
+                                    encoder.releaseOutputBuffer(index, false);
+                                    continue;
+                                }
                                 pendingConfig = new byte[info.size];
                                 outBuf.position(info.offset);
                                 outBuf.limit(info.offset + info.size);
                                 outBuf.get(pendingConfig);
                                 encoder.releaseOutputBuffer(index, false);
-                                Log.d(TAG, "SPS/PPS salvat: " + pendingConfig.length + " bytes");
+                                Log.d(TAG, "SPS/PPS saved: " + pendingConfig.length + " bytes");
                                 continue;
                             }
 
@@ -140,13 +132,15 @@ public class VideoCallManager {
                                     toSend = new byte[pendingConfig.length + frameData.length];
                                     System.arraycopy(pendingConfig, 0, toSend, 0, pendingConfig.length);
                                     System.arraycopy(frameData, 0, toSend, pendingConfig.length, frameData.length);
-                                    Log.d(TAG, "Trimit IDR: " + toSend.length + " bytes");
+                                    Log.d(TAG, "Sent IDR: " + toSend.length + " bytes");
                                 } else {
                                     toSend = frameData;
                                 }
 
                                 byte[] encrypted = UdpCryptoUtils.encrypt(sessionKey, toSend);
-                                if (encrypted != null) sliceAndSend(encrypted, addr);
+                                if (encrypted != null) {
+                                    sliceAndSend(encrypted, addr);
+                                }
                             }
                             encoder.releaseOutputBuffer(index, false);
                         }
@@ -191,7 +185,7 @@ public class VideoCallManager {
             decoder = MediaCodec.createDecoderByType(MIME_TYPE);
             decoder.setCallback(new MediaCodec.Callback() {
                 @Override
-                public void onInputBufferAvailable(MediaCodec codec, int index) {
+                public void onInputBufferAvailable(@NonNull MediaCodec codec, int index) {
                     try {
                         if (!isDecoderConfigured) {
                             codec.queueInputBuffer(index, 0, 0, System.currentTimeMillis() * 1000, 0);
@@ -207,34 +201,36 @@ public class VideoCallManager {
                         } else {
                             codec.queueInputBuffer(index, 0, 0, System.currentTimeMillis() * 1000, 0);
                         }
-                    } catch (Exception e) {}
+                    } catch (Exception ignored) {}
                 }
 
                 @Override
-                public void onOutputBufferAvailable(MediaCodec codec, int index, MediaCodec.BufferInfo info) {
+                public void onOutputBufferAvailable(@NonNull MediaCodec codec, int index, @NonNull MediaCodec.BufferInfo info) {
                     try {
                         codec.releaseOutputBuffer(index, true);
-                    } catch (IllegalStateException e) {}
+                    } catch (IllegalStateException ignored) {}
                 }
 
                 @Override
-                public void onError(MediaCodec codec, MediaCodec.CodecException e) {
+                public void onError(@NonNull MediaCodec codec, @NonNull MediaCodec.CodecException e) {
                     Log.e(TAG, "DECODER ERROR: " + e.getMessage() + " diagnostic=" + e.getDiagnosticInfo());
                 }
 
                 @Override
-                public void onOutputFormatChanged(MediaCodec codec, MediaFormat format) {
+                public void onOutputFormatChanged(@NonNull MediaCodec codec, @NonNull MediaFormat format) {
                     Log.d(TAG, "Decoder output format: " + format);
                 }
             });
-            Log.d(TAG, "Decoder pregatit!");
+            Log.d(TAG, "Decoder ready!");
         } catch (Exception e) {
             Log.e(TAG, "Decoder setup failed", e);
         }
     }
 
     public void receiveVideoSlice(byte[] fullPacketData) {
-        if (!isVideoActive || fullPacketData.length < 17) return;
+        if (!isVideoActive || fullPacketData.length < 17) {
+            return;
+        }
 
         ByteBuffer bb = ByteBuffer.wrap(fullPacketData);
         bb.position(9);
@@ -259,50 +255,68 @@ public class VideoCallManager {
             byte[][] slices = frameCollector.get(frameId);
             if (slices != null && slices[sliceIdx] == null) {
                 slices[sliceIdx] = data;
-                int currentCount = sliceCounter.get(frameId) + 1;
+                Integer count = sliceCounter.get(frameId);
+                if (count == null) {
+                    return;
+                }
+                int currentCount = count + 1;
                 sliceCounter.put(frameId, currentCount);
 
                 if (currentCount == totalSlices) {
-                    assembleAndRender(frameId, totalSlices);
+                    assembleAndRender(frameId);
                 }
             }
         }
     }
 
-    private void assembleAndRender(int frameId, int totalSlices) {
+    private void assembleAndRender(int frameId) {
         byte[][] slices = frameCollector.remove(frameId);
         sliceCounter.remove(frameId);
 
-        if (decoder == null) return;
+        if (decoder == null) {
+            return;
+        }
+
+        if (slices == null) {
+            return;
+        }
 
         int totalSize = 0;
-        for (byte[] s : slices) totalSize += s.length;
+        for (byte[] s : slices) {
+            totalSize += s.length;
+        }
 
         ByteBuffer fullFrame = ByteBuffer.allocate(totalSize);
-        for (byte[] s : slices) fullFrame.put(s);
+        for (byte[] s : slices) {
+            fullFrame.put(s);
+        }
 
         byte[] clearData = UdpCryptoUtils.decrypt(sessionKey, fullFrame.array());
-        if (clearData == null) return;
+        if (clearData == null) {
+            return;
+        }
 
-        int nalType = getNalType(clearData);
+        int nalType = NalUtils.getNalType(clearData);
 
         if (nalType == 7) {
             if (!isDecoderConfigured) {
                 try {
-                    ByteBuffer spsOnly = extractNal(clearData, 0);
-                    ByteBuffer ppsOnly = extractNal(clearData, 1);
+                    ByteBuffer spsOnly = NalUtils.extractNal(clearData, 0);
+                    ByteBuffer ppsOnly = NalUtils.extractNal(clearData, 1);
 
                     Log.d(TAG, "Config decoder: SPS=" + spsOnly.remaining() + " PPS=" + ppsOnly.remaining());
 
                     MediaFormat format = MediaFormat.createVideoFormat(MIME_TYPE, VIDEO_WIDTH, VIDEO_HEIGHT);
-                    format.setInteger(MediaFormat.KEY_LOW_LATENCY, 1);
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                        format.setInteger(MediaFormat.KEY_LOW_LATENCY, 1);
+                    }
                     format.setByteBuffer("csd-0", spsOnly);
                     format.setByteBuffer("csd-1", ppsOnly);
 
                     decoder.configure(format, remoteSurface, null, 0);
                     decoder.start();
                     isDecoderConfigured = true;
-                    Log.d(TAG, "Decoder configurat!");
+                    Log.d(TAG, "Decoder configured!");
                 } catch (Exception e) {
                     Log.e(TAG, "Decoder config failed", e);
                     return;
@@ -315,36 +329,6 @@ public class VideoCallManager {
         if (isDecoderConfigured) {
             decodedFramesQueue.add(clearData);
         }
-    }
-
-    private ByteBuffer extractNal(byte[] data, int nalIndex) {
-        int[] boundaries = findNalBoundaries(data);
-        if (nalIndex >= boundaries.length - 1) return ByteBuffer.wrap(data);
-        int start = boundaries[nalIndex];
-        int end = boundaries[nalIndex + 1];
-        return ByteBuffer.wrap(Arrays.copyOfRange(data, start, end));
-    }
-
-    private int[] findNalBoundaries(byte[] data) {
-        List<Integer> starts = new ArrayList<>();
-        starts.add(0);
-        for (int i = 4; i < data.length - 4; i++) {
-            if (data[i] == 0 && data[i+1] == 0 && data[i+2] == 0 && data[i+3] == 1) {
-                starts.add(i);
-            }
-        }
-        starts.add(data.length);
-        int[] result = new int[starts.size()];
-        for (int i = 0; i < starts.size(); i++) result[i] = starts.get(i);
-        return result;
-    }
-
-    private int getNalType(byte[] data) {
-        if (data.length > 4 && data[0]==0 && data[1]==0 && data[2]==0 && data[3]==1)
-            return data[4] & 0x1F;
-        if (data.length > 3 && data[0]==0 && data[1]==0 && data[2]==1)
-            return data[3] & 0x1F;
-        return -1;
     }
 
     public void endVideo() {

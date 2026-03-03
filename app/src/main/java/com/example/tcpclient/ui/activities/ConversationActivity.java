@@ -354,11 +354,11 @@ public class ConversationActivity extends AppCompatActivity {
     }
 
     public void handleAudioCallClick(View view) {
-        initiateCall(true); // isAudio = true
+        initiateCall(true);
     }
 
     public void handleVideoCallClick(View view) {
-        initiateCall(false); // isAudio = false (adică vrei și video)
+        initiateCall(false);
     }
 
     private void initiateCall(boolean isAudioCall) {

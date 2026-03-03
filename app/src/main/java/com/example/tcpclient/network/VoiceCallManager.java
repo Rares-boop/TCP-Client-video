@@ -53,7 +53,7 @@ public class VoiceCallManager {
 
         setupSpeaker();
         startSending();
-        Log.d(TAG, "Voice Manager pornit pe socket-ul primit!");
+        Log.d(TAG, "Voice Manager open on received socket");
     }
 
     private void setupSpeaker() {
@@ -73,7 +73,7 @@ public class VoiceCallManager {
             if (pcmAudio != null) {
                 speaker.write(pcmAudio, 0, pcmAudio.length);
             } else {
-                Log.e(TAG, "Decryption failed! Gunoi pe rețea ignorat.");
+                Log.e(TAG, "Decryption failed!");
             }
         } catch (Exception e) {
             Log.e(TAG, "Speaker error: " + e.getMessage());
